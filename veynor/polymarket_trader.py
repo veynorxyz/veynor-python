@@ -100,18 +100,18 @@ class PolymarketTrader:
 
     def get_balance(self) -> dict:
         """
-        Returns USDC balance on Polymarket (Polygon).
-        Amounts are in human-readable USDC (float).
+        Returns USDC balance and allowance on Polymarket (Polygon).
+        Uses get_balance_allowance() which is the actual ClobClient method.
+        Amounts are converted from raw integer to human-readable USDC.
         """
         try:
-            raw = self._client.get_balance()
-            # raw may be a dict or a numeric string depending on client version
-            if isinstance(raw, dict):
-                allowance = float(raw.get("allowance", 0)) / 10 ** USDC_DECIMALS
-                balance   = float(raw.get("balance", 0))   / 10 ** USDC_DECIMALS
-            else:
-                balance   = float(raw) / 10 ** USDC_DECIMALS
-                allowance = balance
+            from py_clob_client.clob_types import AssetType
+            raw = self._client.get_balance_allowance(
+                params={"asset_type": AssetType.COLLATERAL}
+            )
+            # Response: {"balance": "1000000", "allowance": "1000000", ...}
+            balance   = float(raw.get("balance",   0)) / 10 ** USDC_DECIMALS
+            allowance = float(raw.get("allowance", 0)) / 10 ** USDC_DECIMALS
             return {
                 "balance_usdc":   round(balance, 2),
                 "allowance_usdc": round(allowance, 2),
@@ -121,21 +121,23 @@ class PolymarketTrader:
 
     def get_positions(self) -> list[dict]:
         """
-        Returns open positions as a list of dicts with keys:
-          market, token_id, side, size, avg_price, current_price, pnl_pct
+        Returns recent trades as a proxy for open positions.
+        Uses get_trades() which is the actual ClobClient method.
         """
         try:
-            raw = self._client.get_positions()
+            raw = self._client.get_trades()
+            # raw is a dict with a "data" list
+            trades = raw if isinstance(raw, list) else raw.get("data", [])
             positions = []
-            for p in (raw or []):
+            for p in trades:
                 positions.append({
                     "market":        p.get("market", p.get("market_slug", "")),
-                    "token_id":      p.get("asset_id", p.get("token_id", "")),
-                    "side":          p.get("outcome", p.get("side", "?")),
+                    "token_id":      p.get("asset_id", p.get("outcome_index", "")),
+                    "side":          p.get("side", "?"),
                     "size":          float(p.get("size", 0)),
-                    "avg_price":     float(p.get("avg_price", p.get("buy_price", 0))),
-                    "current_price": float(p.get("cur_price",  p.get("price", 0))),
-                    "cash_balance":  float(p.get("cash_balance", 0)),
+                    "price":         float(p.get("price", 0)),
+                    "status":        p.get("status", ""),
+                    "trade_id":      p.get("id", ""),
                 })
             return positions
         except Exception as exc:
