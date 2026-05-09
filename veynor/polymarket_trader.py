@@ -221,6 +221,46 @@ class PolymarketTrader:
         except Exception as exc:
             raise PolymarketError(str(exc)) from exc
 
+    def limit_buy(self, token_id: str, price: float, size: float) -> dict:
+        """
+        Place a GTC limit BUY for `size` shares at `price` on `token_id`.
+        price is in cents/dollars (e.g. 0.83 for 83 cents).
+        size is number of shares/contracts.
+        """
+        return self._limit_order(token_id, price, size, side="BUY")
+
+    def limit_sell(self, token_id: str, price: float, size: float) -> dict:
+        """
+        Place a GTC limit SELL of `size` shares at `price` on `token_id`.
+        """
+        return self._limit_order(token_id, price, size, side="SELL")
+
+    def _limit_order(self, token_id: str, price: float, size: float, side: str) -> dict:
+        try:
+            from py_clob_client.clob_types import OrderArgs, OrderType
+            from py_clob_client.order_builder.constants import BUY, SELL
+
+            clob_side = BUY if side == "BUY" else SELL
+            args = OrderArgs(
+                token_id=token_id,
+                price=price,
+                size=size,
+                side=clob_side,
+            )
+            signed = self._client.create_order(args)
+            resp   = self._client.post_order(signed, OrderType.GTC)
+            return {
+                "status":   resp.get("status", resp.get("orderStatus", "unknown")),
+                "order_id": resp.get("orderID", resp.get("id", "")),
+                "side":     side,
+                "token_id": token_id,
+                "price":    price,
+                "size":     size,
+                "raw":      resp,
+            }
+        except Exception as exc:
+            raise PolymarketError(str(exc)) from exc
+
     def cancel_order(self, order_id: str) -> dict:
         """Cancel an open limit order by ID."""
         try:

@@ -791,6 +791,54 @@ def trade_copy(min_notional: float, pct: float, amount: Optional[float],
     click.echo()
 
 
+# ── veynor trade limit ────────────────────────────────────────────────────────
+
+@trade.command("limit")
+@click.argument("side", type=click.Choice(["buy", "sell"]))
+@click.argument("token_id")
+@click.option("--price", required=True, type=float, help="Limit price (e.g. 0.83 for 83 cents).")
+@click.option("--size",  required=True, type=float, help="Number of shares/contracts.")
+@click.option("--yes", "confirmed", is_flag=True, help="Skip confirmation prompt.")
+@click.option("--json", "as_json", is_flag=True, help="Output raw JSON.")
+def trade_limit(side: str, token_id: str, price: float, size: float,
+                confirmed: bool, as_json: bool) -> None:
+    """Place a GTC limit order on Polymarket.
+
+    \b
+    Examples:
+      veynor trade limit buy  0xabc... --price 0.83 --size 5
+      veynor trade limit sell 0xabc... --price 0.95 --size 20
+    """
+    trader = _get_trader()
+
+    if not confirmed:
+        click.echo(f"\n  LIMIT {side.upper()} {size:.2f} shares @ {price:.4f}  (~${price * size:.2f})")
+        click.echo(f"  Token: {token_id[:24]}...")
+        if not click.confirm("  Place order?"):
+            click.echo("  Cancelled.")
+            return
+
+    try:
+        if side == "buy":
+            result = trader.limit_buy(token_id, price, size)
+        else:
+            result = trader.limit_sell(token_id, price, size)
+    except PolymarketError as e:
+        _handle_pm_error(e)
+        return
+
+    if as_json:
+        out(result, True)
+        return
+
+    status   = result.get("status", "?")
+    order_id = result.get("order_id", "")
+    click.echo(f"\n  Order {status}")
+    if order_id:
+        click.echo(f"  ID: {order_id}")
+    click.echo(f"  {side.upper()} {size:.2f} shares @ {price:.4f}  token {token_id[:20]}...\n")
+
+
 # ── veynor trade orders ────────────────────────────────────────────────────────
 
 @trade.command("orders")
