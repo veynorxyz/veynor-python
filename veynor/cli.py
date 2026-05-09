@@ -864,14 +864,16 @@ def trade_orders(as_json: bool) -> None:
     for o in orders:
         order_id = o.get("id", o.get("orderID", "?"))
         side     = o.get("side", "?").upper()
-        size     = float(o.get("size", o.get("originalSize", 0)))
-        filled   = float(o.get("sizeMatched", o.get("sizeFilled", 0)))
+        size     = float(o.get("original_size") or o.get("originalSize") or o.get("size") or 0)
+        filled   = float(o.get("size_matched") or o.get("sizeMatched") or o.get("sizeFilled") or 0)
         price    = o.get("price")
         asset    = o.get("asset_id", o.get("tokenID", "?"))
+        outcome  = o.get("outcome", "")
         status   = o.get("status", o.get("orderStatus", "?"))
-        price_str = f" @ {float(price):.4f}" if price is not None else ""
+        price_str  = f" @ {float(price):.4f}" if price is not None else ""
         filled_str = f"  filled {filled:.2f}/{size:.2f}" if filled > 0 else f"  size {size:.2f}"
-        click.echo(f"  {side}{price_str}{filled_str}  [{status}]")
+        outcome_str = f"  {outcome}" if outcome else ""
+        click.echo(f"  {side}{outcome_str}{price_str}{filled_str}  [{status}]")
         click.echo(f"    token {str(asset)[:20]}...  id {str(order_id)[:12]}...")
         click.echo()
     click.echo()
