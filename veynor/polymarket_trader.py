@@ -51,6 +51,14 @@ CLOB_HOST     = "https://clob.polymarket.com"
 CHAIN_ID      = 137          # Polygon mainnet
 USDC_DECIMALS = 6
 
+PUSD_CONTRACT = "0xC011a7E12a19f7B1f670d46F03B03f3342E82DFB"  # pUSD CollateralToken (proxy)
+POLYGON_RPC   = "https://polygon.publicnode.com"
+
+# ERC-20 balanceOf(address) selector + 32-byte padded address
+def _balance_of_calldata(address: str) -> str:
+    addr = address.lower().replace("0x", "").zfill(64)
+    return "0x70a08231" + addr
+
 
 # ── Trader ─────────────────────────────────────────────────────────────────────
 
@@ -106,30 +114,39 @@ class PolymarketTrader:
 
     def get_balance(self) -> dict:
         """
-        Returns cash available to trade and total portfolio value.
-        Cash = total value minus current value of all open positions.
-        Works for all account types including Magic/proxy wallets.
+        Returns cash (pUSD on-chain balance) and portfolio value.
+        pUSD balance queried directly from the CollateralToken contract on Polygon.
+        Position values from Polymarket data API.
         """
         try:
             addr = self._proxy_address or self._client.get_address()
 
-            value_resp = requests.get(f"{DATA_API}/value", params={"user": addr}, timeout=10)
-            value_resp.raise_for_status()
-            value_data = value_resp.json()
-            total_value = float(value_data[0]["value"]) if value_data else 0.0
+            # 1. pUSD cash balance — direct on-chain query
+            rpc_payload = {
+                "jsonrpc": "2.0", "id": 1, "method": "eth_call",
+                "params": [
+                    {"to": PUSD_CONTRACT, "data": _balance_of_calldata(addr)},
+                    "latest",
+                ],
+            }
+            rpc_resp = requests.post(POLYGON_RPC, json=rpc_payload, timeout=10)
+            rpc_resp.raise_for_status()
+            hex_balance = rpc_resp.json().get("result", "0x0")
+            cash = int(hex_balance, 16) / 10 ** USDC_DECIMALS
 
+            # 2. Position values from data API
             pos_resp = requests.get(f"{DATA_API}/positions", params={"user": addr}, timeout=10)
             pos_resp.raise_for_status()
             positions = pos_resp.json()
             positions_value = sum(float(p.get("currentValue", 0)) for p in positions)
 
-            cash = max(0.0, total_value - positions_value)
+            total_value = cash + positions_value
 
             return {
-                "address":          addr,
-                "cash_usdc":        round(cash, 2),
-                "positions_value":  round(positions_value, 2),
-                "total_value":      round(total_value, 2),
+                "address":         addr,
+                "cash_usdc":       round(cash, 2),
+                "positions_value": round(positions_value, 2),
+                "total_value":     round(total_value, 2),
             }
         except Exception as exc:
             raise PolymarketError(str(exc)) from exc
