@@ -154,6 +154,55 @@ except VeynorError as e:
 
 ---
 
+## REST API
+
+All SDK methods map directly to REST endpoints at `https://api.veynor.xyz`. Pass your key via `X-API-Key` header.
+
+```bash
+# Whale trades
+curl -s -H "X-API-Key: vey_sk_..." \
+  "https://api.veynor.xyz/v1/whale-trades?min_notional=10000&venue=all&limit=10"
+
+# Top markets by 24h volume
+curl -s -H "X-API-Key: vey_sk_..." \
+  "https://api.veynor.xyz/v1/markets/top?venue=all&limit=10"
+
+# Price movers (biggest moves in last hour)
+curl -s -H "X-API-Key: vey_sk_..." \
+  "https://api.veynor.xyz/v1/signals?signal_type=price_movers&limit=10"
+
+# Arb opportunities across venues
+curl -s -H "X-API-Key: vey_sk_..." \
+  "https://api.veynor.xyz/v1/signals?signal_type=arb_opportunities"
+
+# Search markets
+curl -s -H "X-API-Key: vey_sk_..." \
+  "https://api.veynor.xyz/v1/markets/search?q=fed+rate"
+
+# Specific market (Polymarket condition ID or Kalshi ticker)
+curl -s -H "X-API-Key: vey_sk_..." \
+  "https://api.veynor.xyz/v1/markets/polymarket/0x1234..."
+curl -s -H "X-API-Key: vey_sk_..." \
+  "https://api.veynor.xyz/v1/markets/kalshi/KXNBA-25-LAL"
+
+# Credit usage
+curl -s -H "X-API-Key: vey_sk_..." \
+  "https://api.veynor.xyz/v1/usage"
+```
+
+| Endpoint | Params | Credits |
+|----------|--------|---------|
+| `GET /v1/whale-trades` | `venue`, `min_notional`, `category`, `limit` | 2 |
+| `GET /v1/markets/top` | `venue`, `category`, `limit` | 1 |
+| `GET /v1/markets/search` | `q` (required), `venue`, `limit` | 1 |
+| `GET /v1/markets/:venue/:id` | — | 1 |
+| `GET /v1/signals` | `signal_type`, `limit` | 3 |
+| `GET /v1/usage` | — | 0 |
+
+`signal_type` options: `price_movers`, `wide_spreads`, `arb_opportunities`, `all`
+
+---
+
 ## Use in a Jupyter notebook
 
 ```python
@@ -167,8 +216,87 @@ df[["market", "side", "notional", "platform"]].sort_values("notional", ascending
 
 ---
 
+## Polymarket order execution (optional)
+
+The `trade` commands let you place market orders on Polymarket directly from the CLI. All signing happens locally. Your private key is never sent to Veynor's servers.
+
+### 1. Install trade dependencies
+
+```bash
+pip install veynor[trade]
+```
+
+This adds `py-clob-client` and `eth-account` on top of the base install.
+
+### 2. Get your private key from Polymarket
+
+Go to [polymarket.com](https://polymarket.com), open your profile settings, and find the **Private Key** section. The steps are the same regardless of how you signed up.
+
+**If you signed up with email (Magic wallet):**
+Polymarket walks you through exporting your key via Magic.link. Settings > Private Key > sign into Magic.link > copy the key shown.
+
+**If you connected MetaMask or another external wallet:**
+Export the key directly from your wallet app. MetaMask: Settings > Accounts > Account details > Show private key.
+
+Once you have it, store it in your shell environment. Never in code, never committed to git:
+
+```bash
+export POLYMARKET_PRIVATE_KEY=0x...
+```
+
+Add that line to `~/.zshrc` or `~/.bash_profile` to persist it across sessions.
+
+> The CLOB client derives your API credentials from the key locally on each run. Nothing is stored or sent to Veynor.
+
+### 3. Trade
+
+```bash
+# Check your USDC balance on Polygon
+veynor trade balance
+
+# List open positions
+veynor trade positions
+
+# Buy $50 of YES shares on a market
+# TOKEN_ID is the outcome token address — find it with:
+#   veynor market polymarket <condition_id> --json
+veynor trade buy 0xabc123... --amount 50
+
+# Sell 100 shares
+veynor trade sell 0xabc123... --shares 100
+
+# Mirror the latest whale trade (1% of their notional by default)
+veynor trade copy
+
+# Copy a specific whale size, custom amount
+veynor trade copy --min-notional 50000 --amount 200 --yes
+```
+
+All trade commands prompt for confirmation before executing. Pass `--yes` to skip.
+
+### Finding token IDs
+
+Each Polymarket outcome (YES/NO) has a token ID (a Polygon address). Get it from the market detail:
+
+```bash
+veynor market polymarket <condition_id> --json | python3 -m json.tool
+```
+
+Or from the Polymarket UI: open a market, inspect the URL or the API response.
+
+### Errors and troubleshooting
+
+| Error | Fix |
+|-------|-----|
+| `No private key found` | Set `POLYMARKET_PRIVATE_KEY` in your shell |
+| `Failed to derive API credentials` | Check that your key is a valid hex private key starting with `0x` |
+| `Trading requires extra packages` | Run `pip install veynor[trade]` |
+| Order status `unmatched` | Insufficient liquidity at market price — try a smaller amount |
+
+---
+
 ## Links
 
 - [Register for an API key](https://veynor.xyz/agents)
-- [MCP server](https://mcp.veynor.xyz) — connect directly from Claude Desktop or OpenClaw
+- [MCP server](https://mcp.veynor.xyz) — connect directly from Claude Desktop or Cursor
 - [Web app](https://veynor.xyz) — whale feed, smart money signals, trade interface
