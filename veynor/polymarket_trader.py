@@ -106,21 +106,30 @@ class PolymarketTrader:
 
     def get_balance(self) -> dict:
         """
-        Returns total portfolio value from Polymarket's data API.
+        Returns cash available to trade and total portfolio value.
+        Cash = total value minus current value of all open positions.
         Works for all account types including Magic/proxy wallets.
         """
         try:
-            address = self._client.get_address()
-            # Use the proxy wallet address (profile address) if available,
-            # otherwise fall back to the signing key address
-            addr = self._proxy_address or address
-            resp = requests.get(f"{DATA_API}/value", params={"user": addr}, timeout=10)
-            resp.raise_for_status()
-            data = resp.json()
-            value = float(data[0]["value"]) if data else 0.0
+            addr = self._proxy_address or self._client.get_address()
+
+            value_resp = requests.get(f"{DATA_API}/value", params={"user": addr}, timeout=10)
+            value_resp.raise_for_status()
+            value_data = value_resp.json()
+            total_value = float(value_data[0]["value"]) if value_data else 0.0
+
+            pos_resp = requests.get(f"{DATA_API}/positions", params={"user": addr}, timeout=10)
+            pos_resp.raise_for_status()
+            positions = pos_resp.json()
+            positions_value = sum(float(p.get("currentValue", 0)) for p in positions)
+
+            cash = max(0.0, total_value - positions_value)
+
             return {
-                "address":     addr,
-                "value_usdc":  round(value, 2),
+                "address":          addr,
+                "cash_usdc":        round(cash, 2),
+                "positions_value":  round(positions_value, 2),
+                "total_value":      round(total_value, 2),
             }
         except Exception as exc:
             raise PolymarketError(str(exc)) from exc

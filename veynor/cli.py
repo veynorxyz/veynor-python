@@ -432,11 +432,15 @@ def trade_balance(as_json: bool) -> None:
         out(data, True)
         return
 
-    val  = data.get("value_usdc", 0)
-    addr = data.get("address", "")
-    click.echo(f"\n  Portfolio value: ${val:,.2f} USDC")
+    cash     = data.get("cash_usdc", 0)
+    pos_val  = data.get("positions_value", 0)
+    total    = data.get("total_value", 0)
+    addr     = data.get("address", "")
+    click.echo(f"\n  Cash (available):  ${cash:,.2f}")
+    click.echo(f"  In positions:      ${pos_val:,.2f}")
+    click.echo(f"  Total value:       ${total:,.2f}")
     if addr:
-        click.echo(f"  Address:         {addr}")
+        click.echo(f"  Address:           {addr}")
     click.echo()
 
 
@@ -520,12 +524,12 @@ def trade_buy(token_id: str, amount: Optional[float], pct: Optional[float],
         except PolymarketError as e:
             _handle_pm_error(e)
             return
-        balance = bal_data.get("balance_usdc", 0)
+        balance = bal_data.get("cash_usdc", 0)
         if balance <= 0:
             click.echo(f"\n  Balance is ${balance:.2f} — nothing to deploy.\n", err=True)
             sys.exit(1)
         amount = round(balance * pct / 100, 2)
-        click.echo(f"\n  Balance: ${balance:,.2f} USDC  |  {pct}% = ${amount:.2f}")
+        click.echo(f"\n  Cash available: ${balance:,.2f}  |  {pct}% = ${amount:.2f}")
 
     if not confirmed:
         click.echo(f"\n  BUY ${amount:.2f} USDC of token {token_id[:16]}...")
@@ -630,7 +634,7 @@ def trade_copy(min_notional: float, pct: float, amount: Optional[float],
     except PolymarketError as e:
         _handle_pm_error(e)
         return
-    balance = bal_data.get("balance_usdc", 0)
+    balance = bal_data.get("cash_usdc", 0)
 
     # 2. Pull the latest Polymarket whale from the Veynor feed
     client = get_client()
@@ -669,7 +673,7 @@ def trade_copy(min_notional: float, pct: float, amount: Optional[float],
             click.echo(f"\n  Balance is ${balance:.2f} — nothing to deploy.\n", err=True)
             sys.exit(1)
         deploy = round(balance * pct / 100, 2)
-        size_note = f"{pct}% of ${balance:,.2f} balance"
+        size_note = f"{pct}% of ${balance:,.2f} cash"
 
     deploy = max(deploy, 1.0)  # CLOB minimum
 
@@ -682,7 +686,7 @@ def trade_copy(min_notional: float, pct: float, amount: Optional[float],
     if as_json:
         preview = {
             "whale": whale,
-            "balance_usdc": balance,
+            "cash_usdc": balance,
             "your_order": {
                 "side": side, "amount_usdc": deploy,
                 "token_id": token_id, "market": market,
