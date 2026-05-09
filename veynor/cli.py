@@ -347,6 +347,73 @@ def scan(signal: str, limit: int, as_json: bool) -> None:
         click.echo(fmt_signal(s, api_type))
 
 
+# ── veynor positions ───────────────────────────────────────────────────────────
+
+@cli.command("positions")
+@click.argument("wallet", default=None, required=False)
+@click.option("--size-threshold", default=0.1, show_default=True, type=float,
+              help="Minimum position size to include.")
+@click.option("--json", "as_json", is_flag=True, help="Output raw JSON.")
+def positions(wallet: Optional[str], size_threshold: float, as_json: bool) -> None:
+    """Show open positions for a Polymarket wallet address.
+
+    \b
+    WALLET is a Polymarket proxy wallet address (0x...).
+    Falls back to the POLYMARKET_ADDRESS environment variable if not provided.
+    No private key required — read-only intelligence call.
+
+    \b
+    Examples:
+      veynor positions 0xabc...
+      veynor positions                        # uses $POLYMARKET_ADDRESS
+      veynor positions 0xabc... --json
+    """
+    addr = wallet or os.environ.get("POLYMARKET_ADDRESS")
+    if not addr:
+        click.echo(
+            "  No wallet address provided. Pass one as an argument or set "
+            "POLYMARKET_ADDRESS in your environment.",
+            err=True,
+        )
+        sys.exit(1)
+
+    client = get_client()
+    try:
+        items = client.positions(addr, size_threshold=size_threshold)
+    except VeynorError as e:
+        handle_error(e)
+        return
+
+    if as_json:
+        out(items, True)
+        return
+
+    if not items:
+        click.echo("\n  No open positions.\n")
+        return
+
+    total_val  = sum(p.get("currentValue", 0) for p in items)
+    total_pnl  = sum(p.get("cashPnl", 0) for p in items)
+    total_real = sum(p.get("realizedPnl", 0) for p in items)
+
+    click.echo(f"\n  {len(items)} open position(s)   val ${total_val:,.2f}   unrealized {total_pnl:+.2f}   realized {total_real:+.2f}\n")
+    for p in items:
+        outcome  = p.get("outcome", "?").upper()
+        size     = p.get("size", 0)
+        avg      = p.get("avgPrice", 0)
+        cur      = p.get("curPrice", 0)
+        val      = p.get("currentValue", 0)
+        pnl      = p.get("cashPnl", 0)
+        pnl_pct  = p.get("percentPnl", 0)
+        title    = p.get("title", "?")
+        end_date = p.get("endDate", "")
+        pnl_str  = f"{pnl:+.2f} ({pnl_pct:+.1f}%)"
+        date_str = f"  exp {end_date}" if end_date else ""
+        click.echo(f"  {outcome:<3}  {size:>7.1f} shares @ {avg:.3f}  now {cur:.3f}  val ${val:>7.2f}  pnl {pnl_str}{date_str}")
+        click.echo(f"       {title}")
+        click.echo()
+
+
 # ── veynor usage ───────────────────────────────────────────────────────────────
 
 @cli.command()

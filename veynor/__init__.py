@@ -11,4 +11,4 @@ Veynor — prediction market intelligence for agents and traders.
 from .client import Client, VeynorError, AuthError, RateLimitError
 
 __all__ = ["Client", "VeynorError", "AuthError", "RateLimitError"]
-__version__ = "1.2.5"
+__version__ = "1.3.0"

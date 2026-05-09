@@ -228,6 +228,44 @@ class Client:
         """
         return self._get("/v1/signals", signal_type=signal_type, limit=limit)
 
+    def positions(
+        self,
+        wallet: str,
+        *,
+        size_threshold: float = 0.1,
+    ) -> list:
+        """
+        Open positions for a Polymarket wallet address.
+
+        Calls the Polymarket Data API directly — no private key required.
+        For placing or managing orders, use the ``veynor[trade]`` extras instead.
+
+        Parameters
+        ----------
+        wallet : str
+            Polymarket proxy wallet address (``0x...``).
+        size_threshold : float
+            Minimum position size to include (default 0.1 shares).
+
+        Returns
+        -------
+        list of position dicts, each with: title, outcome, size, avgPrice,
+        curPrice, currentValue, cashPnl, percentPnl, realizedPnl, endDate.
+
+        Example
+        -------
+        >>> client = veynor.Client(api_key="vey_sk_...")
+        >>> for p in client.positions("0xabc..."):
+        ...     print(p["title"], p["cashPnl"])
+        """
+        url  = "https://data-api.polymarket.com/positions"
+        resp = self._session.get(
+            url,
+            params={"user": wallet, "sizeThreshold": size_threshold},
+            timeout=self._timeout,
+        )
+        return self._handle(resp)
+
     def usage(self) -> dict:
         """
         Current credit usage, tier, and quota. Always free.
