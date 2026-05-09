@@ -19,6 +19,10 @@ import os
 import sys
 from typing import Optional
 
+import requests
+
+DATA_API = "https://data-api.polymarket.com"
+
 # ── Lazy import guard ──────────────────────────────────────────────────────────
 
 def _require_trade_deps() -> None:
@@ -60,7 +64,7 @@ class PolymarketTrader:
         trader.market_buy(token_id, amount_usdc=50.0)
     """
 
-    def __init__(self, private_key: Optional[str] = None) -> None:
+    def __init__(self, private_key: Optional[str] = None, proxy_address: Optional[str] = None) -> None:
         _require_trade_deps()
 
         from py_clob_client.client import ClobClient
@@ -95,49 +99,57 @@ class PolymarketTrader:
             sys.exit(1)
 
         self._pk = pk
+        # Proxy/account address for data API queries (differs from signing key for Magic users)
+        self._proxy_address = proxy_address or os.environ.get("POLYMARKET_ADDRESS")
 
     # ── Account ────────────────────────────────────────────────────────────────
 
     def get_balance(self) -> dict:
         """
-        Returns USDC balance and allowance on Polymarket (Polygon).
-        Uses get_balance_allowance() which is the actual ClobClient method.
-        Amounts are converted from raw integer to human-readable USDC.
+        Returns total portfolio value from Polymarket's data API.
+        Works for all account types including Magic/proxy wallets.
         """
         try:
-            from py_clob_client.clob_types import AssetType, BalanceAllowanceParams
-            raw = self._client.get_balance_allowance(
-                params=BalanceAllowanceParams(asset_type=AssetType.COLLATERAL)
-            )
-            # Response: {"balance": "1000000", "allowance": "1000000", ...}
-            balance   = float(raw.get("balance",   0)) / 10 ** USDC_DECIMALS
-            allowance = float(raw.get("allowance", 0)) / 10 ** USDC_DECIMALS
+            address = self._client.get_address()
+            # Use the proxy wallet address (profile address) if available,
+            # otherwise fall back to the signing key address
+            addr = self._proxy_address or address
+            resp = requests.get(f"{DATA_API}/value", params={"user": addr}, timeout=10)
+            resp.raise_for_status()
+            data = resp.json()
+            value = float(data[0]["value"]) if data else 0.0
             return {
-                "balance_usdc":   round(balance, 2),
-                "allowance_usdc": round(allowance, 2),
+                "address":     addr,
+                "value_usdc":  round(value, 2),
             }
         except Exception as exc:
             raise PolymarketError(str(exc)) from exc
 
     def get_positions(self) -> list[dict]:
         """
-        Returns recent trades as a proxy for open positions.
-        Uses get_trades() which is the actual ClobClient method.
+        Returns open positions from Polymarket's data API.
+        Works for all account types including Magic/proxy wallets.
         """
         try:
-            raw = self._client.get_trades()
-            # raw is a dict with a "data" list
-            trades = raw if isinstance(raw, list) else raw.get("data", [])
+            addr = self._proxy_address or self._client.get_address()
+            resp = requests.get(f"{DATA_API}/positions", params={"user": addr}, timeout=10)
+            resp.raise_for_status()
+            raw = resp.json()
             positions = []
-            for p in trades:
+            for p in raw:
                 positions.append({
-                    "market":        p.get("market", p.get("market_slug", "")),
-                    "token_id":      p.get("asset_id", p.get("outcome_index", "")),
-                    "side":          p.get("side", "?"),
-                    "size":          float(p.get("size", 0)),
-                    "price":         float(p.get("price", 0)),
-                    "status":        p.get("status", ""),
-                    "trade_id":      p.get("id", ""),
+                    "title":          p.get("title", ""),
+                    "outcome":        p.get("outcome", "?"),
+                    "size":           float(p.get("size", 0)),
+                    "avg_price":      float(p.get("avgPrice", 0)),
+                    "current_price":  float(p.get("curPrice", 0)),
+                    "current_value":  float(p.get("currentValue", 0)),
+                    "cash_pnl":       float(p.get("cashPnl", 0)),
+                    "percent_pnl":    float(p.get("percentPnl", 0)),
+                    "realized_pnl":   float(p.get("realizedPnl", 0)),
+                    "end_date":       p.get("endDate", ""),
+                    "asset":          p.get("asset", ""),
+                    "redeemable":     p.get("redeemable", False),
                 })
             return positions
         except Exception as exc:

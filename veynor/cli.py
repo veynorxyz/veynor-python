@@ -389,8 +389,11 @@ def trade() -> None:
 
     Get your key from Polymarket settings > Private Key.
     Works for both email (Magic) accounts and external wallets (MetaMask etc).
-    Store it in your shell -- never in code or git.
 
+    For Magic/email accounts, also set your profile address:
+      export POLYMARKET_ADDRESS=0x...   (shown in Polymarket profile settings)
+
+    Store credentials in your shell -- never in code or git.
     All signing is local. Your key is never sent to Veynor's servers.
 
     \b
@@ -429,10 +432,12 @@ def trade_balance(as_json: bool) -> None:
         out(data, True)
         return
 
-    bal = data.get("balance_usdc", 0)
-    alw = data.get("allowance_usdc", 0)
-    click.echo(f"\n  Balance:   ${bal:,.2f} USDC")
-    click.echo(f"  Allowance: ${alw:,.2f} USDC\n")
+    val  = data.get("value_usdc", 0)
+    addr = data.get("address", "")
+    click.echo(f"\n  Portfolio value: ${val:,.2f} USDC")
+    if addr:
+        click.echo(f"  Address:         {addr}")
+    click.echo()
 
 
 # ── veynor trade positions ─────────────────────────────────────────────────────
@@ -458,14 +463,18 @@ def trade_positions(as_json: bool) -> None:
 
     click.echo(f"\n  {len(positions)} open positions:\n")
     for p in positions:
-        side    = p.get("side", "?").upper()
-        size    = p.get("size", 0)
-        avg     = p.get("avg_price", 0)
-        cur     = p.get("current_price", 0)
-        market  = p.get("market", p.get("token_id", "?"))
-        pnl_pct = ((cur - avg) / avg * 100) if avg else 0
-        pnl_str = f"{pnl_pct:+.1f}%"
-        click.echo(f"  {side:<4}  {size:>8.2f} shares @ {avg:.3f}  now {cur:.3f}  {pnl_str:>7}  {market}")
+        outcome  = p.get("outcome", "?").upper()
+        size     = p.get("size", 0)
+        avg      = p.get("avg_price", 0)
+        cur      = p.get("current_price", 0)
+        val      = p.get("current_value", 0)
+        pnl      = p.get("cash_pnl", 0)
+        pnl_pct  = p.get("percent_pnl", 0)
+        title    = p.get("title", "?")
+        pnl_str  = f"{pnl:+.2f} ({pnl_pct:+.1f}%)"
+        click.echo(f"  {outcome:<3}  {size:>7.2f} shares @ {avg:.3f}  now {cur:.3f}  val ${val:>7.2f}  pnl {pnl_str}")
+        click.echo(f"       {title}")
+        click.echo()
     click.echo()
 
 
