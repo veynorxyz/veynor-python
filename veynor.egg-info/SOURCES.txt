@@ -1,0 +1,12 @@
+README.md
+pyproject.toml
+veynor/__init__.py
+veynor/cli.py
+veynor/client.py
+veynor/polymarket_trader.py
+veynor.egg-info/PKG-INFO
+veynor.egg-info/SOURCES.txt
+veynor.egg-info/dependency_links.txt
+veynor.egg-info/entry_points.txt
+veynor.egg-info/requires.txt
+veynor.egg-info/top_level.txt

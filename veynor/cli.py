@@ -17,6 +17,7 @@ Polymarket order execution (requires: pip install veynor[trade]):
 
     veynor trade balance
     veynor trade positions
+    veynor trade orders             # open limit orders
     veynor trade buy  <token_id> --amount 50
     veynor trade sell <token_id> --shares 100
     veynor trade copy               # mirror latest whale trade
@@ -787,6 +788,44 @@ def trade_copy(min_notional: float, pct: float, amount: Optional[float],
     click.echo(f"\n  Order {status}")
     if order_id:
         click.echo(f"  ID: {order_id}")
+    click.echo()
+
+
+# ── veynor trade orders ────────────────────────────────────────────────────────
+
+@trade.command("orders")
+@click.option("--json", "as_json", is_flag=True, help="Output raw JSON.")
+def trade_orders(as_json: bool) -> None:
+    """List your open limit orders on Polymarket."""
+    trader = _get_trader()
+    try:
+        orders = trader.get_open_orders()
+    except PolymarketError as e:
+        _handle_pm_error(e)
+        return
+
+    if as_json:
+        out(orders, True)
+        return
+
+    if not orders:
+        click.echo("\n  No open orders.\n")
+        return
+
+    click.echo(f"\n  {len(orders)} open order(s):\n")
+    for o in orders:
+        order_id = o.get("id", o.get("orderID", "?"))
+        side     = o.get("side", "?").upper()
+        size     = float(o.get("size", o.get("originalSize", 0)))
+        filled   = float(o.get("sizeMatched", o.get("sizeFilled", 0)))
+        price    = o.get("price")
+        asset    = o.get("asset_id", o.get("tokenID", "?"))
+        status   = o.get("status", o.get("orderStatus", "?"))
+        price_str = f" @ {float(price):.4f}" if price is not None else ""
+        filled_str = f"  filled {filled:.2f}/{size:.2f}" if filled > 0 else f"  size {size:.2f}"
+        click.echo(f"  {side}{price_str}{filled_str}  [{status}]")
+        click.echo(f"    token {str(asset)[:20]}...  id {str(order_id)[:12]}...")
+        click.echo()
     click.echo()
 
 
