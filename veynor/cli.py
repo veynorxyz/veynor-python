@@ -78,12 +78,12 @@ def fmt_trade(t: dict) -> str:
 
 
 def fmt_market(m: dict, platform: str = "") -> str:
-    plat   = platform or m.get("platform", "")
-    title  = m.get("title", m.get("question", m.get("slug", "?")))
-    vol    = m.get("volume_24h", m.get("volume", 0)) or 0
-    price  = m.get("last_price", m.get("price"))
-    price_str = f"  {price:.2f}" if price is not None else ""
-    return f"  [{plat}]{price_str}  ${vol:>10,.0f}/24h  {title}"
+    plat  = platform or m.get("platform", "")
+    title = m.get("title", m.get("question", m.get("slug", "?")))
+    vol   = m.get("volume_24h", m.get("volume", 0)) or 0
+    yes   = m.get("yes_price", m.get("last_price", m.get("price")))
+    yes_str = f"  YES {round(yes * 100):>3}¢" if yes is not None else "          "
+    return f"  [{plat}]{yes_str}  ${vol:>10,.0f}/24h  {title}"
 
 
 def fmt_signal(s: dict, kind: str) -> str:

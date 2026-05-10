@@ -78,11 +78,12 @@ markets = client.top_markets(
 
 ### `client.search()`
 
-Search markets by keyword across both venues.
+Search markets by keyword across both venues. Results include current YES price and 24-hour volume.
 
 ```python
 results = client.search("fed rate", venue="all", limit=10)
 # Returns: { summary, polymarket: [...], kalshi: [...], meta }
+# Each market includes: title, yes_price (0–1), volume_24h, url, platform
 ```
 
 ### `client.market()`
@@ -200,6 +201,76 @@ curl -s -H "X-API-Key: vey_sk_..." \
 | `GET /v1/usage` | — | 0 |
 
 `signal_type` options: `price_movers`, `wide_spreads`, `arb_opportunities`, `all`
+
+---
+
+## CLI
+
+Every API method is also available as a shell command. Set your key once:
+
+```bash
+export VEYNOR_API_KEY=vey_sk_...
+```
+
+### Search markets
+
+```bash
+veynor search "fed rate"
+veynor search "bitcoin" --limit 20
+veynor search "election" --venue kalshi
+```
+
+Output shows YES price, 24-hour volume, and platform for each result:
+
+```
+  [polymarket]  YES  62¢  $  1,234,567/24h  Will the Fed cut rates in June?
+  [kalshi]      YES  58¢  $    412,300/24h  Fed rate cut — June 2025
+```
+
+Add `--json` before the query for machine-readable output (useful for piping):
+
+```bash
+veynor search --json "bitcoin" | python3 -m json.tool
+veynor search --json "nba" | jq '.results[].yes_price'
+```
+
+### Whale trades
+
+```bash
+veynor whales
+veynor whales --min-notional 50000
+veynor whales --venue kalshi --limit 5
+```
+
+### Top markets
+
+```bash
+veynor top
+veynor top --venue polymarket --limit 20
+```
+
+### Signals
+
+```bash
+veynor signals                          # all signals
+veynor signals --type wide_spreads
+veynor signals --type arb_opportunities
+veynor signals --type price_movers
+```
+
+### Market detail
+
+```bash
+veynor market polymarket <condition_id>
+veynor market kalshi KXNBA-25-LAL
+veynor market kalshi KXNBA-25-LAL --json
+```
+
+### Credit usage
+
+```bash
+veynor usage
+```
 
 ---
 
