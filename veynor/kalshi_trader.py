@@ -67,8 +67,15 @@ def _load_private_key():
 
 
 def _rsa_sign(private_key, message: str) -> str:
-    """RSA-SHA256 sign message, return base64-encoded signature."""
-    sig = private_key.sign(message.encode(), asym_padding.PKCS1v15(), hashes.SHA256())
+    """RSA-PSS-SHA256 sign message, return base64-encoded signature."""
+    sig = private_key.sign(
+        message.encode("utf-8"),
+        asym_padding.PSS(
+            mgf=asym_padding.MGF1(hashes.SHA256()),
+            salt_length=asym_padding.PSS.DIGEST_LENGTH,
+        ),
+        hashes.SHA256(),
+    )
     return base64.b64encode(sig).decode()
 
 
@@ -209,6 +216,7 @@ class KalshiTrader:
         action: str,       # "buy" | "sell"
         count: int,
         yes_price: Optional[int],   # cents (1-99), None for market orders
+        side: str = "yes",          # "yes" | "no" — required by Kalshi API
         order_type: str = "limit",
         client_order_id: Optional[str] = None,
         buy_max_cost: Optional[int] = None,
@@ -218,6 +226,7 @@ class KalshiTrader:
             "type":            order_type,
             "ticker":          ticker,
             "count":           count,
+            "side":            side.lower(),
             "client_order_id": client_order_id or str(uuid.uuid4()),
         }
         if yes_price is not None:
@@ -259,7 +268,7 @@ class KalshiTrader:
                 yes_p = max(1, min(99, 100 - price_cents))
             else:
                 yes_p = max(1, min(99, price_cents))
-            return self._place_order(ticker, "buy", count, yes_p)
+            return self._place_order(ticker, "buy", count, yes_p, side=side.lower())
         except KalshiError:
             raise
         except Exception as exc:
@@ -281,7 +290,7 @@ class KalshiTrader:
                 yes_p = max(1, min(99, 100 - price_cents))
             else:
                 yes_p = max(1, min(99, price_cents))
-            return self._place_order(ticker, "sell", count, yes_p)
+            return self._place_order(ticker, "sell", count, yes_p, side=side.lower())
         except KalshiError:
             raise
         except Exception as exc:
@@ -305,7 +314,7 @@ class KalshiTrader:
                 yes_p = max(1, min(99, round((1 - price) * 100)))
             else:
                 yes_p = max(1, min(99, round(price * 100)))
-            return self._place_order(ticker, "buy", count, yes_p)
+            return self._place_order(ticker, "buy", count, yes_p, side=side.lower())
         except KalshiError:
             raise
         except Exception as exc:
@@ -329,7 +338,7 @@ class KalshiTrader:
                 yes_p = max(1, min(99, round((1 - price) * 100)))
             else:
                 yes_p = max(1, min(99, round(price * 100)))
-            return self._place_order(ticker, "sell", count, yes_p)
+            return self._place_order(ticker, "sell", count, yes_p, side=side.lower())
         except KalshiError:
             raise
         except Exception as exc:

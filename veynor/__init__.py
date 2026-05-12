@@ -17,4 +17,4 @@ __all__ = [
     "KalshiTrader", "KalshiError",
     "PolymarketTrader", "PolymarketError",
 ]
-__version__ = "1.4.0"
+__version__ = "1.4.1"
