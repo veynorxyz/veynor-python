@@ -4,6 +4,8 @@ Veynor CLI — prediction market intelligence from your terminal.
     pip install veynor
     export VEYNOR_API_KEY=vey_sk_...
 
+    veynor wallet create
+    veynor setup
     veynor whales
     veynor scan movers
     veynor scan arb
@@ -109,6 +111,216 @@ def fmt_signal(s: dict, kind: str) -> str:
 @click.version_option(package_name="veynor")
 def cli() -> None:
     """Veynor — prediction market intelligence for traders and agents."""
+
+
+# ── veynor wallet ──────────────────────────────────────────────────────────────
+
+@cli.group("wallet")
+def wallet() -> None:
+    """Wallet utilities — create and inspect Polygon wallets for Polymarket trading."""
+
+
+@wallet.command("create")
+@click.option("--save", is_flag=True,
+              help="Save private key to ~/.veynor/credentials (chmod 600).")
+@click.option("--json", "as_json", is_flag=True, help="Output raw JSON (for agents).")
+def wallet_create(save: bool, as_json: bool) -> None:
+    """Generate a new Polygon wallet keypair.
+
+    \b
+    Creates a fresh private key and Polygon address. You will still need to:
+      1. Fund the wallet with USDC on Polygon
+      2. Register it with Polymarket (one-time browser step)
+    """
+    try:
+        from eth_account import Account
+    except ImportError:
+        click.echo(
+            "eth-account is required. Run: pip install veynor[trade]", err=True
+        )
+        sys.exit(1)
+
+    acct = Account.create()
+    address = acct.address
+    private_key = acct.key.hex()
+    if not private_key.startswith("0x"):
+        private_key = "0x" + private_key
+
+    if as_json:
+        click.echo(json.dumps({
+            "address":     address,
+            "private_key": private_key,
+            "network":     "polygon",
+            "deposit_url": "https://polymarket.com/profile",
+            "register_url": "https://polymarket.com",
+        }, indent=2))
+        return
+
+    SEP = "  " + "─" * 44
+
+    click.echo(f"\n  New Polygon wallet generated\n{SEP}\n")
+    click.echo(f"  Address:     {address}")
+    click.echo(f"  Private key: {private_key}\n")
+    click.echo("  ⚠  Store your private key securely. Anyone with it controls your funds.")
+    click.echo("     Never commit it to code or share it.\n")
+
+    if save:
+        import stat
+        creds_dir  = os.path.expanduser("~/.veynor")
+        creds_file = os.path.join(creds_dir, "credentials")
+        os.makedirs(creds_dir, exist_ok=True)
+        with open(creds_file, "w") as f:
+            f.write(f"POLYMARKET_PRIVATE_KEY={private_key}\n")
+            f.write(f"POLYMARKET_ADDRESS={address}\n")
+        os.chmod(creds_file, stat.S_IRUSR | stat.S_IWUSR)  # chmod 600
+        click.echo(f"  Saved to: {creds_file}\n")
+        click.echo("  Add this to your ~/.zshrc to load automatically:\n")
+        click.echo(f"    source {creds_file}\n")
+    else:
+        click.echo("  [1] Save your key — add to ~/.zshrc:\n")
+        click.echo(f"    export POLYMARKET_PRIVATE_KEY={private_key}")
+        click.echo(f"    export POLYMARKET_ADDRESS={address}\n")
+
+    click.echo("  [2] Fund with USDC on Polygon:\n")
+    click.echo(f"    Deposit to: {address}")
+    click.echo("    Bridge or buy at: https://polymarket.com/profile\n")
+    click.echo("  [3] Register with Polymarket (one-time, requires browser):\n")
+    click.echo("    https://polymarket.com → Sign in with wallet → connect your address\n")
+    click.echo(SEP)
+    click.echo("  Once funded and registered, run: veynor setup\n")
+
+
+# ── veynor setup ───────────────────────────────────────────────────────────────
+
+@cli.command("setup")
+@click.option("--json", "as_json", is_flag=True, help="Output raw JSON (for agents).")
+def setup(as_json: bool) -> None:
+    """Interactive setup wizard — check API key, trade deps, wallet, and balance."""
+
+    CHECK   = "  ✓"   # ✓
+    CROSS   = "  ✗"   # ✗
+    WARN    = "  ⚠"   # ⚠
+    SEP     = "  " + "─" * 44
+
+    results: dict = {}
+
+    if not as_json:
+        click.echo("\n  Veynor Setup\n" + SEP)
+
+    # ── Step 1: API key ────────────────────────────────────────────────────────
+    api_key = os.environ.get("VEYNOR_API_KEY")
+    if not api_key:
+        results["api_key"] = {"ok": False, "reason": "VEYNOR_API_KEY not set"}
+        if as_json:
+            click.echo(json.dumps(results, indent=2))
+        else:
+            click.echo(f"\n{CROSS}  [1/4] API key — not found\n")
+            click.echo("  Get a free key at https://veynor.xyz/agents, then:\n")
+            click.echo("    export VEYNOR_API_KEY=vey_sk_...\n")
+            click.echo("  Add that line to ~/.zshrc to persist across sessions.\n")
+        return
+
+    try:
+        client = Client(api_key=api_key)
+        usage  = client.usage()
+        tier   = usage.get("tier", "free")
+        rem    = usage.get("credits_remaining", "?")
+        results["api_key"] = {"ok": True, "tier": tier, "credits_remaining": rem}
+        if not as_json:
+            click.echo(f"\n{CHECK}  [1/4] API key        {tier} tier · {rem} credits remaining")
+    except Exception as exc:
+        results["api_key"] = {"ok": False, "reason": str(exc)}
+        if as_json:
+            click.echo(json.dumps(results, indent=2))
+        else:
+            click.echo(f"\n{CROSS}  [1/4] API key — invalid or unreachable ({exc})\n")
+        return
+
+    # ── Step 2: Trade dependencies ─────────────────────────────────────────────
+    try:
+        import py_clob_client  # noqa: F401
+        import eth_account     # noqa: F401
+        results["trade_deps"] = {"ok": True}
+        if not as_json:
+            click.echo(f"{CHECK}  [2/4] Trade deps     py-clob-client, eth-account")
+    except ImportError:
+        results["trade_deps"] = {"ok": False, "reason": "veynor[trade] not installed"}
+        if as_json:
+            click.echo(json.dumps(results, indent=2))
+        else:
+            click.echo(f"\n{CROSS}  [2/4] Trade deps — not installed\n")
+            click.echo("  Run:\n")
+            click.echo("    pip install veynor[trade]\n")
+            click.echo("  Then run veynor setup again.\n")
+        return
+
+    # ── Step 3: Wallet / private key ───────────────────────────────────────────
+    pk = os.environ.get("POLYMARKET_PRIVATE_KEY")
+    if not pk:
+        results["wallet"] = {"ok": False, "reason": "POLYMARKET_PRIVATE_KEY not set"}
+        if as_json:
+            click.echo(json.dumps(results, indent=2))
+        else:
+            click.echo(f"\n{CROSS}  [3/4] Wallet — POLYMARKET_PRIVATE_KEY not set\n")
+            click.echo("  How to get your key:\n")
+            click.echo("  • Email/Magic account:")
+            click.echo("      polymarket.com → Profile → Settings → Private Key")
+            click.echo("      (Magic will guide you through an export flow)\n")
+            click.echo("  • MetaMask or external wallet:")
+            click.echo("      MetaMask → Account details → Show private key\n")
+            click.echo("  Then:\n")
+            click.echo("    export POLYMARKET_PRIVATE_KEY=0x...")
+            click.echo("    export POLYMARKET_ADDRESS=0x...   # Magic users only\n")
+            click.echo("  Add both lines to ~/.zshrc to persist.\n")
+        return
+
+    try:
+        from .polymarket_trader import PolymarketTrader, PolymarketError as PMError
+        trader  = PolymarketTrader()
+        status  = trader.wallet_status()
+        addr    = status["address"]
+        balance = status["usdc_balance"]
+        funded  = status["is_funded"]
+
+        results["wallet"] = {"ok": True, "address": addr}
+        if not as_json:
+            short = addr[:20] + "..." if len(addr) > 20 else addr
+            click.echo(f"{CHECK}  [3/4] Wallet         {short}")
+
+        # ── Step 4: USDC balance ───────────────────────────────────────────────
+        results["balance"] = {
+            "ok":           funded,
+            "usdc_balance": balance,
+            "deposit_address": addr,
+            "deposit_url":  "https://polymarket.com/profile",
+        }
+        if as_json:
+            results["ready_to_trade"] = funded
+            click.echo(json.dumps(results, indent=2))
+        else:
+            if balance >= 10:
+                click.echo(f"{CHECK}  [4/4] USDC balance   ${balance:,.2f} available")
+                click.echo(f"\n{SEP}")
+                click.echo("  Ready. Try:\n")
+                click.echo("    veynor trade buy <token_id> --amount 10\n")
+            elif balance > 0:
+                click.echo(f"{WARN}  [4/4] USDC balance   ${balance:,.2f} (low)\n")
+                click.echo("  Deposit USDC (Polygon network) to:")
+                click.echo(f"    {addr}\n")
+                click.echo("  Or visit: https://polymarket.com/profile → Add Funds\n")
+            else:
+                click.echo(f"{CROSS}  [4/4] USDC balance   $0.00 — wallet not funded\n")
+                click.echo("  Deposit USDC (Polygon network) to:")
+                click.echo(f"    {addr}\n")
+                click.echo("  Or visit: https://polymarket.com/profile → Add Funds\n")
+
+    except Exception as exc:
+        results["wallet"] = {"ok": False, "reason": str(exc)}
+        if as_json:
+            click.echo(json.dumps(results, indent=2))
+        else:
+            click.echo(f"\n{CROSS}  [3/4] Wallet — could not initialise ({exc})\n")
+            click.echo("  Check that your POLYMARKET_PRIVATE_KEY is a valid 0x... hex key.\n")
 
 
 # ── veynor whales ──────────────────────────────────────────────────────────────

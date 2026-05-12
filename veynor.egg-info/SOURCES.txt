@@ -3,6 +3,7 @@ pyproject.toml
 veynor/__init__.py
 veynor/cli.py
 veynor/client.py
+veynor/kalshi_trader.py
 veynor/polymarket_trader.py
 veynor.egg-info/PKG-INFO
 veynor.egg-info/SOURCES.txt

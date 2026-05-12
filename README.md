@@ -2,7 +2,7 @@
 
 Python client for the [Veynor](https://veynor.xyz) prediction market intelligence API.
 
-Cross-venue data across Kalshi and Polymarket: whale trades, smart money signals, arb opportunities, and market search — in a single `import`.
+Cross-venue data and trading across Kalshi and Polymarket: whale trades, smart money signals, arb opportunities, market search, price history, and order execution — in a single `import`.
 
 ```python
 pip install veynor
@@ -78,12 +78,12 @@ markets = client.top_markets(
 
 ### `client.search()`
 
-Search markets by keyword across both venues. Results include current YES price and 24-hour volume.
+Search markets by keyword across both venues. Results include current YES price, 24-hour volume, end date, spread, and liquidity.
 
 ```python
 results = client.search("fed rate", venue="all", limit=10)
 # Returns: { summary, polymarket: [...], kalshi: [...], meta }
-# Each market includes: title, yes_price (0–1), volume_24h, url, platform
+# Each market includes: title, yes_price, volume_24h, end_date, spread_cents, liquidity, url
 ```
 
 ### `client.market()`
@@ -112,6 +112,15 @@ signals = client.signals(
 # Returns: { summary, wide_spreads, price_movers, arb_opportunities, meta }
 ```
 
+### `client.positions()`
+
+Open positions for a Polymarket wallet address. No private key required.
+
+```python
+for p in client.positions("0xabc..."):
+    print(p["title"], p["cashPnl"])
+```
+
 ### `client.usage()`
 
 Check your credit balance. Always free.
@@ -125,14 +134,15 @@ print(u["tier"], u["credits_remaining"])
 
 ## Credit costs
 
-| Method          | Credits |
-|-----------------|---------|
-| `whales()`      | 2       |
-| `top_markets()` | 1       |
-| `search()`      | 1       |
-| `market()`      | 1       |
-| `signals()`     | 3       |
-| `usage()`       | 0       |
+| Method            | Credits |
+|-------------------|---------|
+| `whales()`        | 2       |
+| `top_markets()`   | 1       |
+| `search()`        | 1       |
+| `market()`        | 1       |
+| `signals()`       | 3       |
+| `price_history()` | 1       |
+| `usage()`         | 0       |
 
 Free tier: 100 credits/month. Upgrade at [veynor.xyz/agents](https://veynor.xyz/agents).
 
@@ -162,29 +172,31 @@ All SDK methods map directly to REST endpoints at `https://api.veynor.xyz`. Pass
 ```bash
 # Whale trades
 curl -s -H "X-API-Key: vey_sk_..." \
-  "https://api.veynor.xyz/v1/whale-trades?min_notional=10000&venue=all&limit=10"
+  "https://api.veynor.xyz/v1/whale-trades?min_notional=10000&limit=10"
 
 # Top markets by 24h volume
 curl -s -H "X-API-Key: vey_sk_..." \
-  "https://api.veynor.xyz/v1/markets/top?venue=all&limit=10"
-
-# Price movers (biggest moves in last hour)
-curl -s -H "X-API-Key: vey_sk_..." \
-  "https://api.veynor.xyz/v1/signals?signal_type=price_movers&limit=10"
-
-# Arb opportunities across venues
-curl -s -H "X-API-Key: vey_sk_..." \
-  "https://api.veynor.xyz/v1/signals?signal_type=arb_opportunities"
+  "https://api.veynor.xyz/v1/markets/top?limit=10"
 
 # Search markets
 curl -s -H "X-API-Key: vey_sk_..." \
   "https://api.veynor.xyz/v1/markets/search?q=fed+rate"
 
-# Specific market (Polymarket condition ID or Kalshi ticker)
+# Specific market
 curl -s -H "X-API-Key: vey_sk_..." \
   "https://api.veynor.xyz/v1/markets/polymarket/0x1234..."
 curl -s -H "X-API-Key: vey_sk_..." \
   "https://api.veynor.xyz/v1/markets/kalshi/KXNBA-25-LAL"
+
+# Price history (~1h rolling, 60s snapshots)
+curl -s -H "X-API-Key: vey_sk_..." \
+  "https://api.veynor.xyz/v1/markets/polymarket/0x1234.../history"
+curl -s -H "X-API-Key: vey_sk_..." \
+  "https://api.veynor.xyz/v1/markets/kalshi/KXNBA-25-LAL/history"
+
+# Alpha signals
+curl -s -H "X-API-Key: vey_sk_..." \
+  "https://api.veynor.xyz/v1/signals?signal_type=arb_opportunities"
 
 # Credit usage
 curl -s -H "X-API-Key: vey_sk_..." \
@@ -197,10 +209,14 @@ curl -s -H "X-API-Key: vey_sk_..." \
 | `GET /v1/markets/top` | `venue`, `category`, `limit` | 1 |
 | `GET /v1/markets/search` | `q` (required), `venue`, `limit` | 1 |
 | `GET /v1/markets/:venue/:id` | — | 1 |
+| `GET /v1/markets/:venue/:id/history` | — | 1 |
 | `GET /v1/signals` | `signal_type`, `limit` | 3 |
+| `POST /v1/credentials/kalshi` | `kalshi_key_id`, `private_key` | 0 |
+| `GET /v1/credentials/kalshi` | — | 0 |
+| `DELETE /v1/credentials/kalshi` | — | 0 |
+| `POST /v1/trade/kalshi` | `ticker`, `action`, `side`, `count`, `price` | 2 |
+| `POST /v1/trade/submit` | `order`, `signature`, `wallet` | 2 |
 | `GET /v1/usage` | — | 0 |
-
-`signal_type` options: `price_movers`, `wide_spreads`, `arb_opportunities`, `all`
 
 ---
 
@@ -227,11 +243,10 @@ Output shows YES price, 24-hour volume, and platform for each result:
   [kalshi]      YES  58¢  $    412,300/24h  Fed rate cut — June 2025
 ```
 
-Add `--json` before the query for machine-readable output (useful for piping):
+Add `--json` for machine-readable output:
 
 ```bash
-veynor search --json "bitcoin" | python3 -m json.tool
-veynor search --json "nba" | jq '.results[].yes_price'
+veynor search --json "bitcoin" | jq '.results[].yes_price'
 ```
 
 ### Whale trades
@@ -287,11 +302,9 @@ df[["market", "side", "notional", "platform"]].sort_values("notional", ascending
 
 ---
 
-## Polymarket order execution (optional)
+## Kalshi order execution
 
-The `trade` commands let you place market orders on Polymarket directly from the CLI. All signing happens locally — your private key never leaves your machine and is never sent to Veynor's servers.
-
-Supports Polymarket V2 (live April 28, 2026): native EIP-712 signing against the V2 exchange contracts, pUSD collateral, and both the legacy proxy wallet flow and plain EOA flow.
+Place orders on Kalshi directly using your personal API key pair. All signing happens locally — your private key never leaves your machine.
 
 ### 1. Install trade dependencies
 
@@ -299,96 +312,211 @@ Supports Polymarket V2 (live April 28, 2026): native EIP-712 signing against the
 pip install veynor[trade]
 ```
 
-This adds `py-clob-client` and `eth-account` on top of the base install.
+This adds `cryptography` (for RSA signing) on top of the base install.
 
-### 2. Set your credentials
+### 2. Generate a key pair and register it
 
-Export your private key and, if you have a Polymarket proxy wallet (Magic / email sign-up), your proxy address:
+```bash
+# Generate RSA key pair
+openssl genrsa -out kalshi_key.pem 2048
+openssl rsa -in kalshi_key.pem -pubout   # copy this output
+```
+
+Paste the public key at [kalshi.com/profile/api-keys](https://kalshi.com/profile/api-keys) and copy the resulting Key ID (a UUID).
+
+### 3. Set credentials
+
+```bash
+export KALSHI_API_KEY_ID=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+export KALSHI_PRIVATE_KEY_PATH=/path/to/kalshi_key.pem
+```
+
+Or pass the PEM text directly:
+
+```bash
+export KALSHI_PRIVATE_KEY="-----BEGIN RSA PRIVATE KEY-----\n..."
+```
+
+### 4. Trade
+
+```python
+from veynor import KalshiTrader
+
+trader = KalshiTrader()   # reads env vars automatically
+
+# Account
+print(trader.get_balance())    # { cash_usd, cash_cents, ... }
+print(trader.get_positions())  # open positions
+
+# Market buy — spend $50 on YES
+result = trader.market_buy("KXNBA-25JUL05-T204", side="YES", amount_usd=50.0)
+print(result["order_id"], result["status"])
+
+# Limit buy — 100 contracts at 65¢
+result = trader.limit_buy("KXNBA-25JUL05-T204", side="YES", price=0.65, count=100)
+
+# Buy NO side
+result = trader.limit_buy("KXNBA-25JUL05-T204", side="NO", price=0.40, count=50)
+
+# Market sell
+result = trader.market_sell("KXNBA-25JUL05-T204", side="YES", count=100)
+
+# Limit sell
+result = trader.limit_sell("KXNBA-25JUL05-T204", side="YES", price=0.72, count=100)
+
+# Cancel an open order
+trader.cancel_order(order_id)
+
+# Open orders
+orders = trader.get_open_orders()
+orders = trader.get_open_orders(ticker="KXNBA-25JUL05-T204")
+```
+
+### Via the REST API
+
+Register credentials once (encrypted at rest — never returned in any response):
+
+```bash
+curl -X POST https://api.veynor.xyz/v1/credentials/kalshi \
+  -H "X-API-Key: vey_sk_..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "kalshi_key_id": "your-uuid",
+    "private_key": "-----BEGIN RSA PRIVATE KEY-----\n..."
+  }'
+
+# Check status
+curl -H "X-API-Key: vey_sk_..." \
+  https://api.veynor.xyz/v1/credentials/kalshi
+
+# Remove stored credentials
+curl -X DELETE -H "X-API-Key: vey_sk_..." \
+  https://api.veynor.xyz/v1/credentials/kalshi
+```
+
+Then place orders against your own Kalshi account:
+
+```bash
+# Limit buy — 100 YES contracts at 65¢
+curl -X POST https://api.veynor.xyz/v1/trade/kalshi \
+  -H "X-API-Key: vey_sk_..." \
+  -H "Content-Type: application/json" \
+  -d '{"ticker": "KXNBA-25JUL05-T204", "action": "buy", "side": "YES", "count": 100, "price": 0.65}'
+
+# Market sell
+curl -X POST https://api.veynor.xyz/v1/trade/kalshi \
+  -H "X-API-Key: vey_sk_..." \
+  -d '{"ticker": "KXNBA-25JUL05-T204", "action": "sell", "side": "YES", "count": 100, "order_type": "market"}'
+```
+
+Each user's trades execute on their own Kalshi account. Credentials are AES-256-GCM encrypted at rest and scoped to your Veynor API key.
+
+### Errors and troubleshooting
+
+| Error | Fix |
+|-------|-----|
+| `No Kalshi credentials registered` | Call `POST /v1/credentials/kalshi` or set env vars |
+| `cryptography package not installed` | Run `pip install veynor[trade]` |
+| `Kalshi API error (401)` | Check that your Key ID matches the registered public key |
+| `Kalshi API error (403)` | API key may be read-only — enable trading in Kalshi dashboard |
+
+---
+
+## Polymarket order execution
+
+Place orders on Polymarket directly from Python. All signing happens locally — your private key never leaves your machine and is never sent to Veynor's servers.
+
+Supports Polymarket V2 (live April 28, 2026): native EIP-712 signing, pUSD collateral, proxy wallet and plain EOA flows.
+
+### 1. Install trade dependencies
+
+```bash
+pip install veynor[trade]
+```
+
+### 2. Set credentials
 
 ```bash
 export POLYMARKET_PRIVATE_KEY=0x...   # required — your EOA private key
 export POLYMARKET_ADDRESS=0x...       # optional — proxy wallet address (Magic users)
 ```
 
-**How to find your private key:**
-
-- **Email / Magic wallet:** Polymarket settings > Private Key > sign into Magic.link > copy the key shown.
-- **MetaMask or other external wallet:** export directly from your wallet app (Settings > Accounts > Account details > Show private key).
-
-If you set `POLYMARKET_ADDRESS`, orders are placed via your proxy wallet (signatureType 1). Without it, your raw EOA signs and is the maker (signatureType 0) — useful for wallets created post-V2 that don't have a legacy proxy.
-
-Add both lines to `~/.zshrc` or `~/.bash_profile` to persist across sessions. Never commit keys to git.
+If you set `POLYMARKET_ADDRESS`, orders are placed via your proxy wallet (signatureType 1). Without it, your EOA signs directly (signatureType 0).
 
 ### 3. Trade
 
 ```bash
-# Check your pUSD balance on Polygon
+# Check pUSD balance
 veynor trade balance
 
-# List open positions
+# Open positions
 veynor trade positions
 
-# Buy $50 of YES shares on a market
-# TOKEN_ID is the outcome token ID — find it with:
-#   veynor market polymarket <condition_id> --json
+# Market buy $50 of YES shares
 veynor trade buy <token_id> --amount 50
 
-# Buy on a neg-risk market (most multi-outcome Polymarket markets)
+# Neg-risk market (most multi-outcome markets)
 veynor trade buy <token_id> --amount 50 --neg-risk
 
 # Sell 100 shares
 veynor trade sell <token_id> --shares 100
 
-# Mirror the latest whale trade (1% of their notional by default)
+# Copy the latest whale trade
 veynor trade copy
-
-# Copy a specific whale size, custom amount
 veynor trade copy --min-notional 50000 --amount 200 --yes
 ```
-
-All trade commands prompt for confirmation before executing. Pass `--yes` to skip.
-
-### Finding token IDs
-
-Each Polymarket outcome (YES/NO) has a numeric token ID. Get it from the market detail:
-
-```bash
-veynor market polymarket <condition_id> --json | python3 -m json.tool
-```
-
-Or from the Polymarket UI: open a market and inspect the API response or URL parameters.
 
 ### Python API
 
 ```python
-from veynor.polymarket_trader import PolymarketTrader
+from veynor import PolymarketTrader
 
-trader = PolymarketTrader()            # reads env vars automatically
-print(trader.get_balance())            # pUSD cash + open positions
+trader = PolymarketTrader()
+print(trader.get_balance())
 
-# Market buy — $5 on a neg-risk market
-result = trader.market_buy(token_id, amount_usdc=5.0, neg_risk=True)
-print(result["order_id"], result["status"])
-
-# Limit buy — GTC, price in [0.01, 0.99]
+result = trader.market_buy(token_id, amount_usdc=50.0, neg_risk=True)
 result = trader.limit_buy(token_id, price=0.72, size=10.0)
-
-# Market sell
 result = trader.market_sell(token_id, amount_shares=10.0)
-
-# Open orders
+result = trader.limit_sell(token_id, price=0.80, size=10.0)
 orders = trader.get_open_orders()
+trader.cancel_order(order_id)
+```
+
+### Via the REST API (no-custody relay)
+
+Sign the order with your wallet, pass the signature to Veynor. Your private key never touches our servers:
+
+```bash
+curl -X POST https://api.veynor.xyz/v1/trade/submit \
+  -H "X-API-Key: vey_sk_..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "order":     { ...eip712_order_fields... },
+    "signature": "0x...",
+    "wallet":    "0x...",
+    "order_type": "GTC"
+  }'
 ```
 
 ### Errors and troubleshooting
 
 | Error | Fix |
 |-------|-----|
-| `No private key found` | Set `POLYMARKET_PRIVATE_KEY` in your shell |
-| `Failed to derive API credentials` | Check that your key is a valid hex private key starting with `0x` |
+| `No private key found` | Set `POLYMARKET_PRIVATE_KEY` |
+| `Failed to derive API credentials` | Key must be a valid hex string starting with `0x` |
 | `Trading requires extra packages` | Run `pip install veynor[trade]` |
-| `Trading restricted in your region` | Polymarket geo-blocks certain IPs — use a VPN or run from a non-restricted server |
-| Order status `unmatched` | Insufficient liquidity at market price — try a smaller amount |
+| `Trading restricted in your region` | Polymarket geo-blocks certain IPs — use a non-restricted server |
+| Order status `unmatched` | Insufficient liquidity — try a smaller amount |
+
+---
+
+## What's new in v1.4.0
+
+- **Kalshi trading** — `KalshiTrader` with market/limit orders on YES and NO, cancel, positions, balance. RSA key pair auth, non-custodial.
+- **Price history endpoint** — `GET /v1/markets/:venue/:id/history` returns rolling ~1h of 60-second price snapshots with computed 5m/15m/1h moves.
+- **Market index enriched** — search results now include `end_date`, `spread_cents`, and `liquidity` on every market.
+- **Polymarket signed-order relay** — `POST /v1/trade/submit` for agents that sign locally and route through Veynor for builder attribution.
+- **Per-user credential storage** — Kalshi keys stored AES-256-GCM encrypted per Veynor API key. Each user trades their own account.
 
 ---
 
@@ -396,4 +524,4 @@ orders = trader.get_open_orders()
 
 - [Register for an API key](https://veynor.xyz/agents)
 - [MCP server](https://mcp.veynor.xyz) — connect directly from Claude Desktop or Cursor
-- [Web app](https://veynor.xyz) — whale feed, smart money signals, trade interface
+- [Web app](https://veynor.xyz) — whale feed, signals, trade interface

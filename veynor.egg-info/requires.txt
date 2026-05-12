@@ -8,3 +8,4 @@ mypy
 [trade]
 py-clob-client>=0.19
 eth-account>=0.11
+cryptography>=41.0

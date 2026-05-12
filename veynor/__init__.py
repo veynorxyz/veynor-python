@@ -9,6 +9,12 @@ Veynor — prediction market intelligence for agents and traders.
 """
 
 from .client import Client, VeynorError, AuthError, RateLimitError
+from .kalshi_trader import KalshiTrader, KalshiError
+from .polymarket_trader import PolymarketTrader, PolymarketError
 
-__all__ = ["Client", "VeynorError", "AuthError", "RateLimitError"]
-__version__ = "1.3.3"
+__all__ = [
+    "Client", "VeynorError", "AuthError", "RateLimitError",
+    "KalshiTrader", "KalshiError",
+    "PolymarketTrader", "PolymarketError",
+]
+__version__ = "1.4.0"
