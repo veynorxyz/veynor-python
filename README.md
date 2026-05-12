@@ -289,7 +289,9 @@ df[["market", "side", "notional", "platform"]].sort_values("notional", ascending
 
 ## Polymarket order execution (optional)
 
-The `trade` commands let you place market orders on Polymarket directly from the CLI. All signing happens locally. Your private key is never sent to Veynor's servers.
+The `trade` commands let you place market orders on Polymarket directly from the CLI. All signing happens locally — your private key never leaves your machine and is never sent to Veynor's servers.
+
+Supports Polymarket V2 (live April 28, 2026): native EIP-712 signing against the V2 exchange contracts, pUSD collateral, and both the legacy proxy wallet flow and plain EOA flow.
 
 ### 1. Install trade dependencies
 
@@ -299,42 +301,43 @@ pip install veynor[trade]
 
 This adds `py-clob-client` and `eth-account` on top of the base install.
 
-### 2. Get your private key from Polymarket
+### 2. Set your credentials
 
-Go to [polymarket.com](https://polymarket.com), open your profile settings, and find the **Private Key** section. The steps are the same regardless of how you signed up.
-
-**If you signed up with email (Magic wallet):**
-Polymarket walks you through exporting your key via Magic.link. Settings > Private Key > sign into Magic.link > copy the key shown.
-
-**If you connected MetaMask or another external wallet:**
-Export the key directly from your wallet app. MetaMask: Settings > Accounts > Account details > Show private key.
-
-Once you have it, store it in your shell environment. Never in code, never committed to git:
+Export your private key and, if you have a Polymarket proxy wallet (Magic / email sign-up), your proxy address:
 
 ```bash
-export POLYMARKET_PRIVATE_KEY=0x...
+export POLYMARKET_PRIVATE_KEY=0x...   # required — your EOA private key
+export POLYMARKET_ADDRESS=0x...       # optional — proxy wallet address (Magic users)
 ```
 
-Add that line to `~/.zshrc` or `~/.bash_profile` to persist it across sessions.
+**How to find your private key:**
 
-> The CLOB client derives your API credentials from the key locally on each run. Nothing is stored or sent to Veynor.
+- **Email / Magic wallet:** Polymarket settings > Private Key > sign into Magic.link > copy the key shown.
+- **MetaMask or other external wallet:** export directly from your wallet app (Settings > Accounts > Account details > Show private key).
+
+If you set `POLYMARKET_ADDRESS`, orders are placed via your proxy wallet (signatureType 1). Without it, your raw EOA signs and is the maker (signatureType 0) — useful for wallets created post-V2 that don't have a legacy proxy.
+
+Add both lines to `~/.zshrc` or `~/.bash_profile` to persist across sessions. Never commit keys to git.
 
 ### 3. Trade
 
 ```bash
-# Check your USDC balance on Polygon
+# Check your pUSD balance on Polygon
 veynor trade balance
 
 # List open positions
 veynor trade positions
 
 # Buy $50 of YES shares on a market
-# TOKEN_ID is the outcome token address — find it with:
+# TOKEN_ID is the outcome token ID — find it with:
 #   veynor market polymarket <condition_id> --json
-veynor trade buy 0xabc123... --amount 50
+veynor trade buy <token_id> --amount 50
+
+# Buy on a neg-risk market (most multi-outcome Polymarket markets)
+veynor trade buy <token_id> --amount 50 --neg-risk
 
 # Sell 100 shares
-veynor trade sell 0xabc123... --shares 100
+veynor trade sell <token_id> --shares 100
 
 # Mirror the latest whale trade (1% of their notional by default)
 veynor trade copy
@@ -347,13 +350,35 @@ All trade commands prompt for confirmation before executing. Pass `--yes` to ski
 
 ### Finding token IDs
 
-Each Polymarket outcome (YES/NO) has a token ID (a Polygon address). Get it from the market detail:
+Each Polymarket outcome (YES/NO) has a numeric token ID. Get it from the market detail:
 
 ```bash
 veynor market polymarket <condition_id> --json | python3 -m json.tool
 ```
 
-Or from the Polymarket UI: open a market, inspect the URL or the API response.
+Or from the Polymarket UI: open a market and inspect the API response or URL parameters.
+
+### Python API
+
+```python
+from veynor.polymarket_trader import PolymarketTrader
+
+trader = PolymarketTrader()            # reads env vars automatically
+print(trader.get_balance())            # pUSD cash + open positions
+
+# Market buy — $5 on a neg-risk market
+result = trader.market_buy(token_id, amount_usdc=5.0, neg_risk=True)
+print(result["order_id"], result["status"])
+
+# Limit buy — GTC, price in [0.01, 0.99]
+result = trader.limit_buy(token_id, price=0.72, size=10.0)
+
+# Market sell
+result = trader.market_sell(token_id, amount_shares=10.0)
+
+# Open orders
+orders = trader.get_open_orders()
+```
 
 ### Errors and troubleshooting
 
@@ -362,6 +387,7 @@ Or from the Polymarket UI: open a market, inspect the URL or the API response.
 | `No private key found` | Set `POLYMARKET_PRIVATE_KEY` in your shell |
 | `Failed to derive API credentials` | Check that your key is a valid hex private key starting with `0x` |
 | `Trading requires extra packages` | Run `pip install veynor[trade]` |
+| `Trading restricted in your region` | Polymarket geo-blocks certain IPs — use a VPN or run from a non-restricted server |
 | Order status `unmatched` | Insufficient liquidity at market price — try a smaller amount |
 
 ---
