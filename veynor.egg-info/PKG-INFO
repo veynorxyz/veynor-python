@@ -1,6 +1,6 @@
 Metadata-Version: 2.4
 Name: veynor
-Version: 1.4.1
+Version: 1.4.2
 Summary: Prediction market intelligence for agents and traders — Kalshi + Polymarket
 Author-email: Veynor <hello@veynor.xyz>
 License: MIT
@@ -543,7 +543,7 @@ curl -X POST https://api.veynor.xyz/v1/trade/submit \
 
 ---
 
-## What's new in v1.4.0
+## What's new in v1.4.1
 
 - **Kalshi trading** — `KalshiTrader` with market/limit orders on YES and NO, cancel, positions, balance. RSA key pair auth, non-custodial.
 - **Price history endpoint** — `GET /v1/markets/:venue/:id/history` returns rolling ~1h of 60-second price snapshots with computed 5m/15m/1h moves.

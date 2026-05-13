@@ -121,6 +121,19 @@ for p in client.positions("0xabc..."):
     print(p["title"], p["cashPnl"])
 ```
 
+### `client.pulse()`
+
+AI-synthesized plain-English market briefing. Covers top markets by volume, whale activity, price movers, volume spikes, and wide spreads in a single call. Synthesis is powered by Claude Haiku on the server — no LLM setup needed on your end.
+
+```python
+pulse = client.pulse(
+    venue="all",         # "all" | "kalshi" | "polymarket"
+    category="All",      # "All" | "Sports" | "Politics" | "Other"
+)
+print(pulse["summary"])
+# Returns: { summary (plain-English briefing), highlights, meta }
+```
+
 ### `client.usage()`
 
 Check your credit balance. Always free.
@@ -142,6 +155,7 @@ print(u["tier"], u["credits_remaining"])
 | `market()`        | 1       |
 | `signals()`       | 3       |
 | `price_history()` | 1       |
+| `pulse()`         | 5       |
 | `usage()`         | 0       |
 
 Free tier: 100 credits/month. Upgrade at [veynor.xyz/agents](https://veynor.xyz/agents).
@@ -198,6 +212,10 @@ curl -s -H "X-API-Key: vey_sk_..." \
 curl -s -H "X-API-Key: vey_sk_..." \
   "https://api.veynor.xyz/v1/signals?signal_type=arb_opportunities"
 
+# Market pulse (AI-synthesized briefing)
+curl -s -H "X-API-Key: vey_sk_..." \
+  "https://api.veynor.xyz/v1/pulse" | jq .summary
+
 # Credit usage
 curl -s -H "X-API-Key: vey_sk_..." \
   "https://api.veynor.xyz/v1/usage"
@@ -211,6 +229,7 @@ curl -s -H "X-API-Key: vey_sk_..." \
 | `GET /v1/markets/:venue/:id` | — | 1 |
 | `GET /v1/markets/:venue/:id/history` | — | 1 |
 | `GET /v1/signals` | `signal_type`, `limit` | 3 |
+| `GET /v1/pulse` | `venue`, `category` | 5 |
 | `POST /v1/credentials/kalshi` | `kalshi_key_id`, `private_key` | 0 |
 | `GET /v1/credentials/kalshi` | — | 0 |
 | `DELETE /v1/credentials/kalshi` | — | 0 |
@@ -279,6 +298,39 @@ veynor signals --type price_movers
 veynor market polymarket <condition_id>
 veynor market kalshi KXNBA-25-LAL
 veynor market kalshi KXNBA-25-LAL --json
+```
+
+### Market pulse
+
+A plain-English briefing synthesized from live data — top markets, whale activity, price movers, volume spikes, and wide spreads in one shot:
+
+```bash
+veynor pulse
+veynor pulse --venue kalshi
+veynor pulse --category Sports
+```
+
+Sample output:
+
+```
+  Prediction Market Pulse — Wed May 13 2026
+  Data as of: 2026-05-13 14:14:54
+
+  Tennis markets are the real action right now: Pol Martin Tiffon collapsed
+  66.5¢ in the last hour to 6.5¢ while Chris Rodesch surged 59¢ on Kalshi,
+  indicating live match developments. Whale activity is NO-heavy at $178K
+  total notional, anchored by a $34K Manchester City bet...
+
+  Top markets
+    Will Bitcoin hit $150k by June 30, 2026?           $5.8M  (POLYMARKET)
+    Hantavirus pandemic in 2026?                       $1.1M  (POLYMARKET)
+    Starmer out by May 15, 2026?                       $1.1M  (POLYMARKET)
+  Whale flow     10 trades  $178K total  NO-heavy
+  Biggest mover  Will Pol Martin Tiffon win the match…           -66.5¢ (1h)
+  Volume spike   New York Yankees vs. Baltimore Orioles          164.8× ratio
+  Wide spread    Will Lillestrøm SK vs. Viking FK end in a draw?  bid/ask 12¢ / 51¢
+
+  5 credits used · veynor.xyz/agents to upgrade
 ```
 
 ### Credit usage
@@ -510,7 +562,13 @@ curl -X POST https://api.veynor.xyz/v1/trade/submit \
 
 ---
 
-## What's new in v1.4.0
+## What's new in v1.4.2
+
+- **Market pulse** — `client.pulse()` and `veynor pulse` CLI command. AI-synthesized plain-English briefing covering top markets, whale flow, price movers, volume spikes, and wide spreads. Powered by Claude Haiku on the server. 5 credits.
+- **Stale market filtering** — pulse and signals automatically exclude markets past their close time so no expired data surfaces as actionable.
+- **Data freshness tracking** — pulse response includes `meta.data_freshness` so you always know how old the underlying scanner data is.
+
+## What's new in v1.4.1
 
 - **Kalshi trading** — `KalshiTrader` with market/limit orders on YES and NO, cancel, positions, balance. RSA key pair auth, non-custodial.
 - **Price history endpoint** — `GET /v1/markets/:venue/:id/history` returns rolling ~1h of 60-second price snapshots with computed 5m/15m/1h moves.
