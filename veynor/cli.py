@@ -712,12 +712,7 @@ def pulse(venue: str, category: Optional[str], as_json: bool) -> None:
     click.echo(f"  {summary}")
     click.echo()
 
-    def _t(title: str, max_len: int = 55) -> str:
-        """Truncate at a word boundary, append ellipsis only if actually cut."""
-        if len(title) <= max_len:
-            return title
-        cut = title[:max_len].rsplit(" ", 1)[0]
-        return cut + "…"
+    # _t() is defined at module level — no local shadow needed
 
     if top_mkts:
         click.echo("  Top markets")
@@ -728,11 +723,21 @@ def pulse(venue: str, category: Optional[str], as_json: bool) -> None:
             )
 
     if whales:
-        click.echo(
-            f"  Whale flow     {whales.get('count', 0)} trades  "
-            f"{whales.get('total_notional', '$0')} total  "
-            f"{whales.get('bias', '—')}"
-        )
+        recent = whales.get("recent", [])
+        if recent:
+            click.echo("  Whale flow")
+            for t in recent[:2]:
+                market  = _t(str(t.get("market", "")), 52)
+                side    = str(t.get("side", "YES"))
+                notional = str(t.get("notional", ""))
+                venue   = str(t.get("venue", ""))
+                click.echo(f"    {market:<54}  {side:<3}  {notional:>7}  {venue}")
+        else:
+            click.echo(
+                f"  Whale flow     {whales.get('count', 0)} trades  "
+                f"{whales.get('total_notional', '$0')} total  "
+                f"{whales.get('bias', '—')}"
+            )
 
     if movers:
         m = movers[0]
@@ -757,6 +762,95 @@ def pulse(venue: str, category: Optional[str], as_json: bool) -> None:
         )
 
     credits = meta.get("credits_used", 5)
+    click.echo()
+    click.echo(f"  {credits} credits used · veynor.xyz/agents to upgrade")
+    click.echo()
+
+
+# ── veynor ask ─────────────────────────────────────────────────────────────────
+
+def _t(title: str, max_len: int = 55) -> str:
+    """Truncate at a word boundary, append ellipsis only if actually cut."""
+    if len(title) <= max_len:
+        return title
+    cut = title[:max_len].rsplit(" ", 1)[0]
+    return cut + "…"
+
+
+VALID_TAGS = ["crypto", "geopolitics", "trump", "us_politics", "macro", "sports"]
+
+@cli.command("ask")
+@click.argument("tag", type=click.Choice(VALID_TAGS, case_sensitive=False))
+@click.option("--limit", default=20, show_default=True, type=int,
+              help="Max markets to return.")
+@click.option("--json", "as_json", is_flag=True, help="Output raw JSON.")
+def ask(tag: str, limit: int, as_json: bool) -> None:
+    """Cross-venue market summary for a topic.
+
+    TAG is one of: crypto, geopolitics, trump, us_politics, macro, sports
+
+    \b
+    Examples:
+      veynor ask geopolitics
+      veynor ask trump
+      veynor ask crypto --limit 30
+    """
+    client = get_client()
+    try:
+        data = client.topic(tag, limit=limit)
+    except (VeynorError, AuthError) as e:
+        click.echo(f"  Error: {e}", err=True)
+        raise SystemExit(1)
+
+    if as_json:
+        click.echo(json.dumps(data, indent=2))
+        return
+
+    summary  = data.get("summary", "")
+    markets  = data.get("markets", [])
+    meta     = data.get("meta", {})
+    total    = meta.get("total", len(markets))
+    kalshi_n = meta.get("kalshi_count", 0)
+    poly_n   = meta.get("polymarket_count", 0)
+
+    tag_labels = {
+        "crypto":     "Crypto",
+        "geopolitics":"Geopolitics",
+        "trump":      "Trump",
+        "us_politics":"US Politics",
+        "macro":      "Macro / Economy",
+        "sports":     "Sports",
+    }
+    label = tag_labels.get(tag, tag)
+
+    click.echo()
+    click.echo(f"  {label} — prediction market snapshot")
+    click.echo(f"  {total} markets  ·  Kalshi: {kalshi_n}  Polymarket: {poly_n}")
+    click.echo()
+    click.echo(f"  {summary}")
+    click.echo()
+
+    if markets:
+        click.echo(f"  {'Market':<122}  {'Price':>5}  {'Vol/24h':>9}  Venue")
+        click.echo("  " + "-" * 146)
+        for m in markets[:15]:
+            raw_title = m.get("title", "")
+            # For Kalshi multi-outcome markets the title is shared across variants.
+            # Extract the outcome keyword from the ticker suffix (e.g. KXFOO-26MAY-IRAN → "Iran")
+            market_id = str(m.get("id", ""))
+            if market_id.startswith("KALSHI:"):
+                suffix = market_id.split("-")[-1].upper()
+                # Only append if it looks like a meaningful outcome tag (2-6 alpha chars)
+                if suffix.isalpha() and 2 <= len(suffix) <= 6:
+                    raw_title = f"{raw_title} [{suffix}]"
+            title   = raw_title  # no truncation — show full title
+            price   = f"{round(float(m.get('yes_price', 0)) * 100)}¢"
+            vol     = m.get("volume_24h", 0)
+            vol_str = f"${vol/1_000_000:.1f}M" if vol >= 1_000_000 else f"${vol/1_000:.0f}K" if vol >= 1_000 else f"${vol:.0f}"
+            venue   = str(m.get("platform", "")).upper()
+            click.echo(f"  {title:<122}  {price:>5}  {vol_str:>9}  {venue}")
+
+    credits = meta.get("credits_used", 3)
     click.echo()
     click.echo(f"  {credits} credits used · veynor.xyz/agents to upgrade")
     click.echo()
@@ -876,11 +970,13 @@ def trade_positions(as_json: bool) -> None:
               help="Fixed USDC amount to spend (e.g. --amount 50).")
 @click.option("--pct", default=None, type=float,
               help="Percentage of available USDC balance to spend (e.g. --pct 5 = 5%).")
+@click.option("--neg-risk", "neg_risk", is_flag=True,
+              help="Use neg-risk exchange contract (required for neg-risk markets).")
 @click.option("--yes", "confirmed", is_flag=True,
               help="Skip confirmation prompt.")
 @click.option("--json", "as_json", is_flag=True, help="Output raw JSON.")
 def trade_buy(token_id: str, amount: Optional[float], pct: Optional[float],
-              confirmed: bool, as_json: bool) -> None:
+              neg_risk: bool, confirmed: bool, as_json: bool) -> None:
     """Buy shares on Polymarket with a market order.
 
     \b
@@ -924,7 +1020,7 @@ def trade_buy(token_id: str, amount: Optional[float], pct: Optional[float],
             return
 
     try:
-        result = trader.market_buy(token_id, amount)
+        result = trader.market_buy(token_id, amount, neg_risk=neg_risk)
     except PolymarketError as e:
         _handle_pm_error(e)
         return
@@ -1195,6 +1291,101 @@ def trade_orders(as_json: bool) -> None:
         click.echo(f"    token {str(asset)[:20]}...  id {str(order_id)[:12]}...")
         click.echo()
     click.echo()
+
+
+# ── veynor follow ──────────────────────────────────────────────────────────────
+
+@cli.command("follow")
+@click.option("--amount", default=None, type=float,
+              help="Fixed USDC to spend per copied trade (e.g. --amount 5).")
+@click.option("--pct", default=None, type=float,
+              help="% of available balance per copied trade (e.g. --pct 2).")
+@click.option("--min-notional", default=10_000, type=float, show_default=True,
+              help="Only copy whale trades at or above this size in USD.")
+@click.option("--category", default="All", show_default=True,
+              type=click.Choice(["All", "Sports", "Politics", "Other"], case_sensitive=False),
+              help="Only follow trades in this category.")
+@click.option("--sides", default="YES", show_default=True,
+              type=click.Choice(["YES", "NO", "ALL"], case_sensitive=False),
+              help="Which sides to follow: YES, NO, or ALL.")
+@click.option("--max-daily", default=0.0, type=float,
+              help="Max USDC to spend per day across all copied trades (0 = no cap).")
+@click.option("--interval", default=30, type=int, show_default=True,
+              help="Poll interval in seconds.")
+@click.option("--dry-run", is_flag=True,
+              help="Log what would be traded without executing any orders.")
+@click.option("--verbose", is_flag=True,
+              help="Log every poll cycle, not just new trades.")
+@click.option("--venues", default=None, multiple=True,
+              type=click.Choice(["polymarket", "kalshi"], case_sensitive=False),
+              help="Which venues to follow (default: auto-detect from env). "
+                   "Repeat for multiple: --venues polymarket --venues kalshi")
+def follow(
+    amount: Optional[float],
+    pct: Optional[float],
+    min_notional: float,
+    category: str,
+    sides: str,
+    max_daily: float,
+    interval: int,
+    dry_run: bool,
+    verbose: bool,
+    venues: tuple,
+) -> None:
+    """Mirror large whale trades on Polymarket and/or Kalshi automatically.
+
+    \b
+    Polls the Veynor whale feed every INTERVAL seconds. When a new trade
+    is detected above MIN_NOTIONAL, it buys the same outcome on your
+    connected exchange account(s).
+
+    \b
+    Polymarket credentials:
+      export POLYMARKET_PRIVATE_KEY=0x...
+      export POLYMARKET_ADDRESS=0x...    (Magic/email wallet proxy address)
+
+    \b
+    Kalshi credentials (optional -- auto-detected if set):
+      export KALSHI_API_KEY_ID=<uuid>
+      export KALSHI_PRIVATE_KEY_PATH=/path/to/key.pem
+
+    \b
+    Safety: use --max-daily to cap total spend per day.
+    Test first with --dry-run to see what would be traded.
+
+    \b
+    Examples:
+      veynor follow --amount 2 --dry-run
+      veynor follow --amount 5 --min-notional 20000
+      veynor follow --pct 2 --max-daily 50 --category Politics
+      veynor follow --amount 10 --sides ALL --interval 15
+      veynor follow --amount 3 --venues polymarket --venues kalshi
+    """
+    if amount is None and pct is None:
+        amount = 2.0
+        click.echo("  No --amount or --pct specified. Defaulting to $2 per trade.")
+
+    if amount is not None and pct is not None:
+        click.echo("  Use --amount or --pct, not both.", err=True)
+        sys.exit(1)
+
+    from .follower import run_follower
+    client = get_client()
+
+    run_follower(
+        client=client,
+        min_notional=min_notional,
+        amount=amount,
+        pct=pct,
+        category=category,
+        max_daily=max_daily,
+        interval=interval,
+        dry_run=dry_run,
+        sides=sides,
+        venues=list(venues) if venues else None,
+        verbose=verbose,
+        echo=click.echo,
+    )
 
 
 # ── Entry point ────────────────────────────────────────────────────────────────

@@ -562,6 +562,77 @@ curl -X POST https://api.veynor.xyz/v1/trade/submit \
 
 ---
 
+## Whale following
+
+`veynor follow` polls the whale feed on an interval and mirrors large trades directly to your Polymarket and/or Kalshi account.
+
+### Setup
+
+Polymarket credentials (required):
+```bash
+export POLYMARKET_PRIVATE_KEY=0x...
+export POLYMARKET_ADDRESS=0x...
+```
+
+Kalshi credentials (optional — auto-detected if set):
+```bash
+export KALSHI_API_KEY_ID=<uuid>
+export KALSHI_PRIVATE_KEY_PATH=/path/to/key.pem
+# or inline:
+export KALSHI_PRIVATE_KEY="-----BEGIN RSA PRIVATE KEY-----\n..."
+```
+
+### Usage
+
+```bash
+# Start with a dry run first — see what would trade without spending anything
+veynor follow --amount 2 --dry-run
+
+# Follow with $5 per copied trade, minimum $15k whale size
+veynor follow --amount 5 --min-notional 15000
+
+# Use 2% of balance per trade, $50/day cap, Politics markets only
+veynor follow --pct 2 --max-daily 50 --category Politics
+
+# Follow both YES and NO sides, poll every 15 seconds
+veynor follow --amount 10 --sides ALL --interval 15
+
+# Explicit venue list (default: auto-detect from env)
+veynor follow --amount 3 --venues polymarket --venues kalshi
+```
+
+### How it works
+
+1. On startup, seeds all current whale trades as seen so no historical trades fire.
+2. Every `--interval` seconds, fetches fresh whale trades from all active venues.
+3. New trades (not seen before) are fingerprinted by `(platform, market, side, notional)` and persisted to `~/.veynor_seen_trades.json` so restarts don't re-fire.
+4. Polymarket trades: looks up the market by name to resolve `token_id` and `neg_risk` flag, then executes a market buy.
+5. Kalshi trades: extracts the ticker from the market URL, maps the side (handles team names like "NO KANSAS CITY"), and executes a market buy.
+6. Daily spend is tracked in memory and resets at midnight. Use `--max-daily` to cap total exposure.
+
+### Options
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--amount` | 2.0 | Fixed USDC per copied trade |
+| `--pct` | — | % of balance per copied trade (mutually exclusive with `--amount`) |
+| `--min-notional` | 10000 | Only copy trades at or above this size |
+| `--category` | All | Filter to Sports, Politics, or Other |
+| `--sides` | YES | YES, NO, or ALL |
+| `--max-daily` | 0 | Daily USDC spend cap (0 = no cap) |
+| `--interval` | 30 | Poll interval in seconds |
+| `--venues` | auto | `polymarket`, `kalshi`, or both (repeat flag) |
+| `--dry-run` | false | Log trades without executing |
+| `--verbose` | false | Log every poll cycle, not just new trades |
+
+---
+
+## What's new in v1.4.3
+
+- **Whale following** — `veynor follow` daemon mirrors large whale trades to your Polymarket and/or Kalshi account. Persistent dedup, daily spend cap, dry-run mode. Kalshi is auto-detected from env vars.
+- **Polymarket minimum contracts** — `market_buy` now enforces the Polymarket minimum of 5 contracts per order, adjusting size up automatically when needed.
+- **Multi-venue following** — a single follower instance can watch both Polymarket and Kalshi simultaneously. Use `--venues` to configure explicitly or let it auto-detect from credentials.
+
 ## What's new in v1.4.2
 
 - **Market pulse** — `client.pulse()` and `veynor pulse` CLI command. AI-synthesized plain-English briefing covering top markets, whale flow, price movers, volume spikes, and wide spreads. Powered by Claude Haiku on the server. 5 credits.

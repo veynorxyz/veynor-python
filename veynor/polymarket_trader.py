@@ -310,10 +310,16 @@ class PolymarketTrader:
         Market BUY — fetches best ask and places an aggressive limit order.
         amount_usdc is the USDC amount to spend.
         neg_risk must be True for neg-risk markets.
+        Enforces Polymarket's minimum of 5 contracts (shares).
         """
         try:
             price = self._get_aggressive_price(token_id, SIDE_BUY)
             size  = amount_usdc / price
+            # Polymarket enforces a minimum of 5 contracts per order.
+            # If the requested amount buys fewer than 5 shares, bump up to 5.
+            MIN_CONTRACTS = 5.0
+            if size < MIN_CONTRACTS:
+                size = MIN_CONTRACTS
             order = self._build_and_sign_order(token_id, price, size, SIDE_BUY, neg_risk)
             resp  = self._post_order(order, "GTC")
             order_id = (

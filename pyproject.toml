@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "veynor"
-version = "1.4.2"
+version = "1.4.3"
 description = "Prediction market intelligence for agents and traders — Kalshi + Polymarket"
 readme = "README.md"
 license = { text = "MIT" }
